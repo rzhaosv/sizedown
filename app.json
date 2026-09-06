@@ -45,9 +45,6 @@
       "eas": {
         "projectId": "bec98955-0a9d-4928-b202-d21fd43b7dbe"
       }
-    },
-    "experiments": {
-      "baseUrl": "/sizedown/app"
     }
   }
 }
