@@ -100,7 +100,7 @@ export const FIRM_PRESETS: FirmPreset[] = [
 export const money = (n: number, currency = 'USD') => {
   const sign = n < 0 ? '-' : '';
   const abs = Math.abs(n);
-  const s = abs >= 10000 ? abs.toLocaleString(undefined, { maximumFractionDigits: 0 }) : abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const s = abs >= 1000 ? abs.toLocaleString(undefined, { maximumFractionDigits: 0 }) : abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${sign}${currency === 'USD' ? '$' : ''}${s}`;
 };
 export const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
