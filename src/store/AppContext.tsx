@@ -5,6 +5,7 @@ import { Profile, Entitlement, Trade, Eval } from '../logic/types';
 import { ensureSession, getProfile, saveProfile, getEntitlement, listTrades, listEvals, restoreWithSession } from '../logic/api';
 import { supabase } from '../services/supabase';
 import { demo } from '../dev/demo';
+import { configureBilling, getCustomerInfo, isPlus as rcIsPro, addPlusListener } from '../services/billing';
 
 const DEV_UNLOCK = process.env.EXPO_PUBLIC_DEV_UNLOCK === '1';
 const PREFS_KEY = 'sizedown.prefs.v1';
@@ -33,6 +34,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [evals, setEvals] = useState<Eval[]>([]);
   const [prefs, setPrefsState] = useState<Prefs>(DEFAULT_PREFS);
   const [attempt, setAttempt] = useState(0);
+  const [rcPro, setRcPro] = useState(false);
   const offline = !supabase && !demo;
 
   const load = useCallback(async (id: string) => {
@@ -60,6 +62,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
         await load(id);
+        if (Platform.OS !== 'web') { configureBilling(id); const info = await getCustomerInfo(); if (rcIsPro(info)) setRcPro(true); addPlusListener((v) => setRcPro(v)); }
         setError(null);
       } catch (e: any) { setError(e?.message ?? 'Could not reach the server.'); }
       setReady(true);
@@ -72,7 +75,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = useCallback(async (patch: Partial<Profile>) => { if (!uid) return; setProfile(await saveProfile(uid, patch)); }, [uid]);
   const refresh = useCallback(async () => { if (uid) await load(uid); }, [uid, load]);
   const refreshEntitlement = useCallback(async () => { if (!uid) return false; const e = await getEntitlement(uid); setEntitlement(e); return !!e && e.status !== 'canceled'; }, [uid]);
-  const isPro = DEV_UNLOCK || (!!entitlement && entitlement.status !== 'canceled' && (entitlement.plan === 'lifetime' || !entitlement.current_period_end || new Date(entitlement.current_period_end).getTime() + 3 * 86400_000 > Date.now()));
+  const isPro = DEV_UNLOCK || rcPro || (!!entitlement && entitlement.status !== 'canceled' && (entitlement.plan === 'lifetime' || !entitlement.current_period_end || new Date(entitlement.current_period_end).getTime() + 3 * 86400_000 > Date.now()));
 
   return (
     <AppCtx.Provider value={{ ready, offline, error, uid, profile, entitlement, isPro, trades, evals, prefs, setPrefs, updateProfile, refresh, refreshEntitlement, retry: () => { setReady(false); setAttempt((a) => a + 1); } }}>

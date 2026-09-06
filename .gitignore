@@ -3,6 +3,7 @@ node_modules/
 dist/
 *.ipa
 .credentials/
+!.env
 credentials.json
 .DS_Store
 store/screenshots/raw/

@@ -5,6 +5,8 @@ import { colors, radius, type } from '../theme';
 import { PrimaryButton } from '../components/UI';
 import { useApp } from '../store/AppContext';
 import { restoreWithSession } from '../logic/api';
+import { getPackages, purchase as rcPurchase, restore as rcRestore, isCancelledError } from '../services/billing';
+import type { PurchasesPackage } from 'react-native-purchases';
 import { STRIPE_LINKS, SITE, PRICES, FREE_TRADES_PER_MONTH } from '../config';
 import { ScreenProps } from '../navigation';
 
@@ -22,18 +24,30 @@ export default function PaywallScreen({ navigation, route }: ScreenProps<'Paywal
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const poll = useRef<any>(null);
+  const [pkgs, setPkgs] = useState<PurchasesPackage[]>([]);
+  const [, setRcPro] = useState(false);
+  useEffect(() => { if (Platform.OS !== 'web') getPackages().then(setPkgs); }, []);
+  const rcPkg = pkgs.find((x) => (plan === 'monthly' ? x.packageType === 'MONTHLY' : x.packageType === 'LIFETIME' || x.packageType === 'ANNUAL'));
+  const shownPrice = Platform.OS !== 'web' && rcPkg ? rcPkg.product.priceString : PRICES[plan];
   useEffect(() => { setPrefs({ seenPaywall: true }); return () => clearInterval(poll.current); }, [setPrefs]);
   useEffect(() => { if (isPro) { clearInterval(poll.current); navigation.canGoBack() ? navigation.goBack() : navigation.replace('Tabs'); } }, [isPro, navigation]);
 
   const close = () => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Tabs'));
   const buy = async () => {
     if (!uid) return;
+    if (Platform.OS !== 'web') {
+      if (!rcPkg) return Alert.alert('Not available yet', 'Plans could not be loaded. Check your connection and try again.');
+      setWaiting(true);
+      try { if (await rcPurchase(rcPkg)) { setRcPro(true); close(); } } catch (e: any) { if (!isCancelledError(e)) Alert.alert('Purchase failed', e?.message ?? 'Please try again.'); } finally { setWaiting(false); }
+      return;
+    }
     const url = `${STRIPE_LINKS[plan]}?client_reference_id=${encodeURIComponent(uid)}`;
     setWaiting(true);
     if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.assign(url);
     else { await Linking.openURL(url); poll.current = setInterval(() => refreshEntitlement().then((ok) => ok && clearInterval(poll.current)), 4000); }
   };
   const restore = async () => {
+    if (Platform.OS !== 'web') { try { if (await rcRestore()) { setRcPro(true); Alert.alert('Restored', 'Pro is back.'); close(); } else Alert.alert('Nothing to restore', 'No active purchase for this Apple ID.'); } catch (e: any) { Alert.alert('Restore failed', e?.message ?? 'Try again.'); } return; }
     const sid = sessionId.trim();
     if (!/^cs_/.test(sid) || !uid) return Alert.alert('Session id', 'Paste the id that starts with cs_ from your Stripe receipt link.');
     const ok = await restoreWithSession(sid, uid);
@@ -55,14 +69,14 @@ export default function PaywallScreen({ navigation, route }: ScreenProps<'Paywal
           <Plan on={plan === 'lifetime'} onPress={() => setPlan('lifetime')} title="Lifetime" sub="Pay once. Own your journal. No renewals." price={PRICES.lifetime} per="once" best />
           <Plan on={plan === 'monthly'} onPress={() => setPlan('monthly')} title="Monthly" sub="Cancel any time from the Stripe receipt." price={PRICES.monthly} per="per month" />
         </View>
-        <PrimaryButton title={waiting ? 'Waiting for Stripe…' : `Continue, ${PRICES[plan]} ${plan === 'lifetime' ? 'once' : 'per month'}`} onPress={buy} loading={waiting && Platform.OS !== 'web'} color={colors.accent} style={{ marginTop: 18 }} />
-        <Text style={[type.caption, { textAlign: 'center', marginTop: 12, lineHeight: 18 }]}>Checkout is by Stripe, on the web. Monthly renews automatically until you cancel; lifetime is a single charge. Tied to this install; keep the receipt to restore on a new device.</Text>
+        <PrimaryButton title={waiting ? (Platform.OS === 'web' ? 'Waiting for Stripe…' : 'Working…') : `Continue, ${shownPrice} ${plan === 'lifetime' ? 'once' : 'per month'}`} onPress={buy} loading={waiting && Platform.OS !== 'web'} color={colors.accent} style={{ marginTop: 18 }} />
+        <Text style={[type.caption, { textAlign: 'center', marginTop: 12, lineHeight: 18 }]}>{Platform.OS === 'web' ? 'Checkout is by Stripe, on the web.' : 'Billed by Apple at the price shown.'} Monthly renews automatically until you cancel; lifetime is a single charge. Tied to this install; keep the receipt to restore on a new device.</Text>
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 18, marginTop: 14 }}>
           <Pressable onPress={() => setRestoreOpen((v) => !v)}><Text style={styles.link}>Restore purchase</Text></Pressable>
           <Pressable onPress={() => Linking.openURL(`${SITE}/terms.html`)}><Text style={styles.link}>Terms</Text></Pressable>
           <Pressable onPress={() => Linking.openURL(`${SITE}/privacy.html`)}><Text style={styles.link}>Privacy</Text></Pressable>
         </View>
-        {restoreOpen ? (
+        {restoreOpen && Platform.OS === 'web' ? (
           <View style={{ marginTop: 14 }}>
             <Text style={type.caption}>Paste the checkout session id from your receipt link (starts with cs_).</Text>
             <TextInput value={sessionId} onChangeText={setSessionId} placeholder="cs_live_…" placeholderTextColor={colors.muted} autoCapitalize="none" style={styles.input} />
